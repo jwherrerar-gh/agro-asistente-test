@@ -33,13 +33,14 @@ class QdrantVectorStoreAdapter(VectorStorePort):
         return self._collection_name
 
     def _ensure_collection(self) -> None:
-        self._client.get_or_create_collection(
-            collection_name=self._collection_name,
-            vectors_config=qdrant_models.VectorParams(
-                size=self._vector_size,
-                distance=qdrant_models.Distance.COSINE,
-            ),
-        )
+        if not self._client.collection_exists(collection_name=self._collection_name):
+            self._client.create_collection(
+                collection_name=self._collection_name,
+                vectors_config=qdrant_models.VectorParams(
+                    size=self._vector_size,
+                    distance=qdrant_models.Distance.COSINE,
+                ),
+            )
 
     def upsert(self, records: list[VectorRecord]) -> None:
         if not records:
