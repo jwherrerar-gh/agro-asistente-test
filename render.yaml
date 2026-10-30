@@ -1,0 +1,73 @@
+# Propuesta de Blueprint. No crea MySQL, no monta disco y no publica Ollama.
+# Las claves sin valor se completan en el panel de Render. No pongas secretos aquí.
+# El desarrollo local sigue usando backend/.env y el proxy de Vite.
+
+services:
+  - type: web
+    name: agro-asistente-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.main
+    healthCheckPath: /health
+    envVars:
+      - key: GENERATION_PROVIDER
+        value: ollama
+      - key: OLLAMA_MODEL
+        value: qwen2.5:1.5b
+      - key: OLLAMA_TIMEOUT_SECONDS
+        value: "90"
+      - key: EMBEDDING_PROVIDER
+        value: local
+      - key: EMBEDDING_DIMENSION
+        value: "128"
+      - key: CHROMA_COLLECTION
+        value: agro_knowledge_pmv1
+      - key: RAG_TOP_K
+        value: "3"
+      - key: RAG_MIN_SIMILARITY
+        value: "0.12"
+      - key: CHUNK_SIZE
+        value: "500"
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_EXPIRE_MINUTES
+        value: "120"
+      - key: CLASIFICADOR_MARGEN_MINIMO
+        value: "0.17"
+      - key: MYSQL_PORT
+        value: "3306"
+      - key: MYSQL_DATABASE
+        value: agro_asistente
+      - key: SENAMHI_WIS2_BASE_URL
+        value: https://wis.senamhi.gob.pe/oapi
+      - key: SENAMHI_WIS2_COLLECTION
+        value: urn:wmo:md:pe-senamhi:synop-hourly
+      - key: SENAMHI_WIS2_TIMEOUT_SECONDS
+        value: "20"
+      - key: MYSQL_HOST
+        sync: false
+      - key: MYSQL_USER
+        sync: false
+      - key: MYSQL_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: OLLAMA_BASE_URL
+        sync: false
+
+  - type: web
+    name: agro-asistente-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
