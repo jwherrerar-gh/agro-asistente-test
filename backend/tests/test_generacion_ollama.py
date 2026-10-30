@@ -5,6 +5,9 @@ import pytest
 
 from app.domain.exceptions import ErrorGeneracionTexto
 from app.domain.ports.output.text_generation_port import PasajeRecuperado, PuertoGeneracionTexto
+from app.infrastructure.adapters.output.generation.adaptador_generacion_gemini import (
+    AdaptadorGeneracionGemini,
+)
 from app.infrastructure.adapters.output.generation.adaptador_generacion_ollama import (
     AdaptadorGeneracionOllama,
     construir_prompt_agricola,
@@ -100,6 +103,41 @@ def test_ollama_adapter_returns_model_text_with_method_ollama() -> None:
     assert "floración" in str(payload["prompt"])
 
 
+def test_gemini_adapter_returns_model_text_with_method_gemini() -> None:
+    cliente = _ClienteFalso(
+        _RespuestaFalsa(
+            200,
+            {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [{"text": "Riega con frecuencia y evita el encharcamiento."}]
+                        }
+                    }
+                ]
+            },
+        )
+    )
+    adapter = AdaptadorGeneracionGemini(
+        api_key="test-key",
+        model="gemini-3.8-flash",
+        timeout_seconds=5,
+        cliente_http=cliente,
+    )
+    generated = adapter.generar(
+        texto_consulta="¿Cómo riego la papa?",
+        cultivo="papa",
+        region="Huancayo",
+        pasajes=[PasajeRecuperado(titulo="Riego", extracto="Riegos frecuentes en floración.")],
+    )
+    assert generated.metodo_generacion == "gemini"
+    assert "encharcamiento" in generated.texto_respuesta
+    url, payload = cliente.llamadas[0]
+    assert "generateContent" in url
+    assert payload["generationConfig"]["temperature"] == 0.2
+    assert "papa" in str(payload["contents"][0]["parts"][0]["text"])
+
+
 def test_ollama_connection_error_is_controlled() -> None:
     request = httpx.Request("POST", "http://127.0.0.1:11434/api/generate")
     cliente = _ClienteFalso(httpx.ConnectError("connection refused", request=request))
@@ -185,6 +223,21 @@ def test_composition_wires_ollama_from_settings() -> None:
 def test_composition_can_wire_template_fallback() -> None:
     container = CompositionRoot(Settings(_env_file=None, generation_provider="template"))
     assert isinstance(container.puerto_generacion_texto, AdaptadorGeneracionPlantilla)
+
+
+def test_composition_wires_gemini_from_settings() -> None:
+    settings = Settings(
+        _env_file=None,
+        generation_provider="gemini",
+        gemini_api_key="test-key",
+        gemini_model="gemini-3.8-flash",
+        gemini_timeout_seconds=15,
+    )
+    container = CompositionRoot(settings)
+    adapter = container.puerto_generacion_texto
+    assert isinstance(adapter, AdaptadorGeneracionGemini)
+    assert adapter._model == "gemini-3.8-flash"
+    assert adapter._timeout_seconds == 15
 
 
 def test_adapter_source_does_not_hardcode_qwen_tag() -> None:

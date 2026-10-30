@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     mysql_user: str = "root"
     mysql_password: str = ""
     mysql_database: str = "agro_asistente"
+    mysql_ssl_verify_cert: bool = True
+    mysql_ssl_verify_identity: bool = True
+    mysql_ssl_ca_path: str = ""
 
     jwt_secret: str = "change-me-in-local-env-do-not-use-in-production"
     jwt_algorithm: str = "HS256"
@@ -31,6 +34,11 @@ class Settings(BaseSettings):
 
     chroma_persist_dir: str = "./chroma_data"
     chroma_collection: str = "agro_knowledge_pmv1"
+    vector_store_provider: str = "qdrant"
+    qdrant_url: str = ""
+    qdrant_api_key: str = ""
+    qdrant_collection: str = "agro_knowledge_pmv1"
+    qdrant_timeout_seconds: int = 30
 
     rag_top_k: int = 3
     rag_min_similarity: float = 0.12
@@ -46,6 +54,10 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen2.5:1.5b"
     ollama_timeout_seconds: int = 90
+
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"
+    gemini_timeout_seconds: int = 90
 
     senamhi_wis2_base_url: str = "https://wis.senamhi.gob.pe/oapi"
     senamhi_wis2_collection: str = "urn:wmo:md:pe-senamhi:synop-hourly"
@@ -88,9 +100,17 @@ class Settings(BaseSettings):
             auth = f"{user}:{password}"
         else:
             auth = user
+
+        ssl_params = [
+            f"ssl_verify_cert={'true' if self.mysql_ssl_verify_cert else 'false'}",
+            f"ssl_verify_identity={'true' if self.mysql_ssl_verify_identity else 'false'}",
+        ]
+        if self.mysql_ssl_ca_path:
+            ssl_params.append(f"ssl_ca={quote_plus(self.mysql_ssl_ca_path)}")
+
         return (
             f"mysql+pymysql://{auth}@{host}:{self.mysql_port}/"
-            f"{database}?charset=utf8mb4"
+            f"{database}?charset=utf8mb4&{'&'.join(ssl_params)}"
         )
 
 

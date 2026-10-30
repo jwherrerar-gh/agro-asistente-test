@@ -64,6 +64,9 @@ from app.infrastructure.adapters.output.embedding.external_embedding_adapter imp
 from app.infrastructure.adapters.output.embedding.local_lexical_embedding_adapter import (
     LocalLexicalEmbeddingAdapter,
 )
+from app.infrastructure.adapters.output.generation.adaptador_generacion_gemini import (
+    AdaptadorGeneracionGemini,
+)
 from app.infrastructure.adapters.output.generation.adaptador_generacion_ollama import (
     AdaptadorGeneracionOllama,
 )
@@ -82,6 +85,9 @@ from app.infrastructure.adapters.output.mysql.repositorio_documento_conocimiento
     RepositorioDocumentoConocimientoMysql,
 )
 from app.infrastructure.adapters.output.mysql.repositorio_evidencia import RepositorioEvidenciaMysql
+from app.infrastructure.adapters.output.qdrant.qdrant_vector_store_adapter import (
+    QdrantVectorStoreAdapter,
+)
 from app.infrastructure.adapters.output.riesgo.adaptador_predictor_riesgo import (
     AdaptadorPredictorRiesgo,
     resolver_ruta_modelo_riesgo,
@@ -155,10 +161,7 @@ class CompositionRoot:
         self.puerto_repositorio_evidencia: PuertoRepositorioEvidencia = RepositorioEvidenciaMysql(
             session_factory
         )
-        self.puerto_almacen_vectores: VectorStorePort = ChromaVectorStoreAdapter(
-            persist_dir=self.settings.chroma_persist_dir,
-            collection_name=self.settings.chroma_collection,
-        )
+        self.puerto_almacen_vectores: VectorStorePort = self._build_vector_store_port()
         self.servicio_recuperacion_rag = ServicioRecuperacionRag(
             embedding_port=self.embedding_port,
             almacen_vectores=self.puerto_almacen_vectores,
@@ -216,15 +219,42 @@ class CompositionRoot:
         provider = (self.settings.generation_provider or "ollama").strip().lower()
         if provider == "template":
             return AdaptadorGeneracionPlantilla()
+        if provider == "gemini":
+            return AdaptadorGeneracionGemini(
+                api_key=self.settings.gemini_api_key,
+                model=self.settings.gemini_model,
+                timeout_seconds=self.settings.gemini_timeout_seconds,
+            )
         if provider != "ollama":
             raise ValueError(
-                "GENERATION_PROVIDER debe ser 'ollama' (PMV1) o 'template' (pruebas)."
+                "GENERATION_PROVIDER debe ser 'ollama' (local), 'gemini' (servicio remoto) o 'template' (pruebas)."
             )
         return AdaptadorGeneracionOllama(
             base_url=self.settings.ollama_base_url,
             model=self.settings.ollama_model,
             timeout_seconds=self.settings.ollama_timeout_seconds,
         )
+
+    def _build_vector_store_port(self) -> VectorStorePort:
+        provider = (self.settings.vector_store_provider or "qdrant").strip().lower()
+        if provider == "qdrant":
+            if not self.settings.qdrant_url:
+                return ChromaVectorStoreAdapter(
+                    persist_dir=self.settings.chroma_persist_dir,
+                    collection_name=self.settings.chroma_collection,
+                )
+            return QdrantVectorStoreAdapter(
+                url=self.settings.qdrant_url,
+                api_key=self.settings.qdrant_api_key,
+                collection_name=self.settings.qdrant_collection or self.settings.chroma_collection,
+                vector_size=self.settings.embedding_dimension,
+            )
+        if provider == "chroma":
+            return ChromaVectorStoreAdapter(
+                persist_dir=self.settings.chroma_persist_dir,
+                collection_name=self.settings.chroma_collection,
+            )
+        raise ValueError("VECTOR_STORE_PROVIDER debe ser 'qdrant' o 'chroma'.")
 
 
 def build_container() -> CompositionRoot:

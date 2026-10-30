@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from sqlalchemy import DateTime, Integer, String, select
+from sqlalchemy import DateTime, Integer, String, Text, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column, sessionmaker
 
@@ -28,6 +28,7 @@ class RegistroDocumentoConocimiento(Base):
     ruta_origen: Mapped[str] = mapped_column(String(500), nullable=False)
     hash_contenido: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     fecha_creacion: Mapped[object] = mapped_column(DateTime, nullable=True)
+    contenido: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class RepositorioDocumentoConocimientoMysql(PuertoRepositorioDocumentoConocimiento):
@@ -45,21 +46,11 @@ class RepositorioDocumentoConocimientoMysql(PuertoRepositorioDocumentoConocimien
             return documento_id is not None
 
     def guardar(self, documento: DocumentoConocimiento, contenido: str) -> None:
-        ruta_archivo = self._ruta_archivo(documento.ruta_origen)
-        ruta_meta = self._ruta_meta(documento.ruta_origen)
-        ruta_archivo.parent.mkdir(parents=True, exist_ok=True)
-        ruta_archivo.write_text(contenido, encoding="utf-8")
-        _escribir_meta(
-            ruta_meta,
-            titulo=documento.titulo,
-            tema=documento.tema,
-            cantidad_fragmentos=documento.cantidad_fragmentos,
-        )
-
         registro = RegistroDocumentoConocimiento(
             ruta_origen=documento.ruta_origen[:500],
             hash_contenido=documento.hash_contenido.value,
             fecha_creacion=documento.incorporado_en,
+            contenido=contenido,
         )
         with self._session_factory() as session:
             session.add(registro)
@@ -69,8 +60,6 @@ class RepositorioDocumentoConocimientoMysql(PuertoRepositorioDocumentoConocimien
                 session.commit()
             except IntegrityError as error:
                 session.rollback()
-                ruta_archivo.unlink(missing_ok=True)
-                ruta_meta.unlink(missing_ok=True)
                 raise ErrorDocumentoConocimientoDuplicado(
                     "El documento de conocimiento ya está registrado"
                 ) from error
@@ -96,12 +85,20 @@ class RepositorioDocumentoConocimientoMysql(PuertoRepositorioDocumentoConocimien
             return self._a_entidad(registro)
 
     def leer_contenido(self, documento: DocumentoConocimiento) -> str:
-        ruta_archivo = self._ruta_archivo(documento.ruta_origen)
-        if not ruta_archivo.exists():
-            raise ErrorArchivoConocimientoNoEncontrado(
-                "No se encontró el archivo del documento de conocimiento"
+        with self._session_factory() as session:
+            registro = session.scalar(
+                select(RegistroDocumentoConocimiento).where(
+                    RegistroDocumentoConocimiento.id == id_a_entero(documento.id)
+                )
             )
-        return ruta_archivo.read_text(encoding="utf-8")
+            if registro is None:
+                raise ErrorArchivoConocimientoNoEncontrado(
+                    "No se encontró el archivo del documento de conocimiento"
+                )
+            contenido = registro.contenido
+            if isinstance(contenido, bytes):
+                return contenido.decode("utf-8")
+            return str(contenido)
 
     def actualizar_cantidad_fragmentos(self, documento_id: str, cantidad_fragmentos: int) -> None:
         with self._session_factory() as session:
