@@ -201,6 +201,7 @@ def test_submit_query_with_indexed_knowledge_returns_evidences(tmp_path: Path) -
         assert body["evidences"]
         top = body["evidences"][0]
         assert top["document_id"] == document_id
+        assert top["origin_reference"] == source_path
         assert top["excerpt"]
         assert top["similarity_score"] > 0
         assert "base de conocimiento" in body["answer"].lower()
@@ -210,7 +211,7 @@ def test_submit_query_with_indexed_knowledge_returns_evidences(tmp_path: Path) -
         with engine.connect() as connection:
             evidence_row = connection.execute(
                 text(
-                    "SELECT documento_id, texto_fragmento FROM evidencias "
+                    "SELECT documento_id, texto_fragmento, titulo_documento FROM evidencias "
                     "WHERE consulta_id = :id ORDER BY id ASC"
                 ),
                 {"id": query_id},
@@ -223,6 +224,7 @@ def test_submit_query_with_indexed_knowledge_returns_evidences(tmp_path: Path) -
         assert str(evidence_row[0]) == str(document_id)
         assert evidence_row[1]
         assert ":chunk:" in evidence_row[1]
+        assert evidence_row[2] == payload["title"]
         assert response_row[0] == "template"
     finally:
         if source_path:

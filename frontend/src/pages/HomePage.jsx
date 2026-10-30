@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { urlBaseApi } from "../api/baseUrl.js";
 import { getHealth } from "../api/client";
 import PublicShell from "../components/PublicShell.jsx";
 
@@ -15,7 +16,9 @@ export default function HomePage() {
         setError("");
       })
       .catch(() => {
-        setError("No se pudo conectar con el backend en http://127.0.0.1:8000/health");
+        const base = urlBaseApi(import.meta.env);
+        const destino = base ? `${base}/health` : "/health";
+        setError(`No se pudo conectar con el backend en ${destino}`);
       })
       .finally(() => setLoading(false));
   }, []);

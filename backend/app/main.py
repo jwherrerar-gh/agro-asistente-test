@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -37,3 +39,32 @@ app.include_router(create_knowledge_router(container))
 app.include_router(create_weather_router(container))
 app.include_router(create_clasificacion_router(container))
 app.include_router(create_riesgo_router(container))
+
+
+def host_de_escucha() -> str:
+    """Producción escucha en todas las interfaces. El desarrollo local puede fijar otra."""
+    return "0.0.0.0"
+
+
+def puerto_de_escucha(environ: dict[str, str] | None = None) -> int:
+    """Usa PORT y, si no existe, el 8000 del entorno local."""
+    env = environ if environ is not None else os.environ
+    bruto = str(env.get("PORT", "")).strip() or "8000"
+    try:
+        puerto = int(bruto)
+    except ValueError as error:
+        raise ValueError("PORT debe ser un entero entre 1 y 65535") from error
+    if puerto < 1 or puerto > 65535:
+        raise ValueError("PORT debe ser un entero entre 1 y 65535")
+    return puerto
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        app,
+        host=host_de_escucha(),
+        port=puerto_de_escucha(),
+        reload=False,
+    )

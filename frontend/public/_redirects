@@ -1,0 +1,3 @@
+# Sitio estático de Render: las rutas de React se resuelven en index.html.
+# Los archivos existentes, como /assets, se sirven antes que esta regla.
+/*    /index.html    200

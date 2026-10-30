@@ -1,6 +1,10 @@
+from decimal import Decimal
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
 from app.domain.entities.evidencia import Evidencia
 from app.domain.exceptions import ErrorEvidenciaInvalida
@@ -8,6 +12,10 @@ from app.domain.ports.output.repositorio_evidencia_port import PuertoRepositorio
 from app.domain.ports.output.text_generation_port import PasajeRecuperado
 from app.infrastructure.adapters.output.generation.adaptador_generacion_plantilla import (
     AdaptadorGeneracionPlantilla,
+)
+from app.infrastructure.adapters.output.mysql.repositorio_evidencia import (
+    RegistroEvidencia,
+    RepositorioEvidenciaMysql,
 )
 
 
@@ -70,6 +78,87 @@ def test_evidence_repository_persists_association_to_query() -> None:
     assert stored[0].consulta_id == query_id
     assert stored[0].extracto == "Cubrir plantones jóvenes."
     assert repository.listar_por_consulta_id("missing") == []
+
+
+def test_repositorio_evidencia_guarda_y_recupera_el_titulo() -> None:
+    engine = create_engine("sqlite://")
+    RegistroEvidencia.__table__.create(engine)
+    fabrica = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    repositorio = RepositorioEvidenciaMysql(fabrica)
+    evidencia = Evidencia.crear(
+        consulta_id="41",
+        respuesta_id="42",
+        documento_id="18",
+        fragmento_id="riego:chunk:0000",
+        extracto="Vigilar la humedad del suelo.",
+        puntaje_similitud=0.4,
+        orden_relevancia=1,
+        titulo_documento="Prueba de riego de papa",
+    )
+
+    repositorio.guardar_todas([evidencia])
+
+    with engine.connect() as conexion:
+        fila = conexion.execute(
+            text(
+                "SELECT consulta_id, respuesta_id, documento_id, titulo_documento, "
+                "texto_fragmento FROM evidencias"
+            )
+        ).one()
+    assert fila.consulta_id == 41
+    assert fila.respuesta_id == 42
+    assert fila.documento_id == 18
+    assert fila.titulo_documento == "Prueba de riego de papa"
+    assert "riego:chunk:0000" in fila.texto_fragmento
+
+    recuperadas = repositorio.listar_por_consulta_id("41")
+    assert len(recuperadas) == 1
+    assert recuperadas[0].consulta_id == "41"
+    assert recuperadas[0].respuesta_id == "42"
+    assert recuperadas[0].titulo_documento == "Prueba de riego de papa"
+    assert recuperadas[0].extracto == "Vigilar la humedad del suelo."
+    assert recuperadas[0].fragmento_id == "riego:chunk:0000"
+
+
+def test_repositorio_evidencia_recupera_fila_antigua_sin_titulo() -> None:
+    engine = create_engine("sqlite://")
+    RegistroEvidencia.__table__.create(engine)
+    fabrica = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    repositorio = RepositorioEvidenciaMysql(fabrica)
+    with engine.begin() as conexion:
+        conexion.execute(
+            text(
+                "INSERT INTO evidencias "
+                "(consulta_id, respuesta_id, documento_id, texto_fragmento, "
+                "puntuacion_similitud) "
+                "VALUES (7, 8, 5, :texto, :puntaje)"
+            ),
+            {"texto": "CHUNK:heladas:chunk:0000\nVigilar la temperatura.", "puntaje": 0.41},
+        )
+
+    recuperadas = repositorio.listar_por_consulta_id("7")
+    assert len(recuperadas) == 1
+    assert recuperadas[0].titulo_documento == ""
+    assert recuperadas[0].consulta_id == "7"
+    assert recuperadas[0].respuesta_id == "8"
+    assert recuperadas[0].extracto == "Vigilar la temperatura."
+    assert recuperadas[0].fragmento_id == "heladas:chunk:0000"
+    assert recuperadas[0].puntaje_similitud == 0.41
+
+    sin_titulo = repositorio._a_entidad(
+        SimpleNamespace(
+            id=9,
+            consulta_id=7,
+            respuesta_id=8,
+            documento_id=5,
+            texto_fragmento="CHUNK:heladas:chunk:0000\nVigilar la temperatura.",
+            puntuacion_similitud=Decimal("0.410000"),
+            titulo_documento=None,
+        ),
+        1,
+    )
+    assert sin_titulo.titulo_documento == ""
+    assert sin_titulo.extracto == "Vigilar la temperatura."
 
 
 def test_template_generation_uses_evidences() -> None:

@@ -304,9 +304,12 @@ def test_submit_query_associates_and_persists_evidences() -> None:
     )
     repository.contextos_seleccionados[FARMER_A] = _contexto(FARMER_A)
 
-    result = use_case.ejecutar(ComandoRegistrarConsulta(agricultor_id=FARMER_A, texto=QUESTION))
+    consulta_con_respaldo = "¿Conviene un riego frecuente en floración?"
+    result = use_case.ejecutar(
+        ComandoRegistrarConsulta(agricultor_id=FARMER_A, texto=consulta_con_respaldo)
+    )
 
-    assert rag.consultas == [QUESTION]
+    assert rag.consultas == [consulta_con_respaldo]
     assert len(result.evidencias) == 1
     assert result.evidencias[0].documento_id == "doc-1"
     assert result.evidencias[0].extracto == "Riego frecuente en floración."
@@ -316,6 +319,8 @@ def test_submit_query_associates_and_persists_evidences() -> None:
     assert stored.consulta_id == result.id
     assert stored.respuesta_id == repository.respuestas[0].id
     assert stored.documento_id == "doc-1"
+    assert stored.titulo_documento == "Riego de papa"
+    assert result.evidencias[0].titulo_documento == "Riego de papa"
     assert "Riego frecuente" in result.respuesta
 
 
@@ -364,6 +369,163 @@ def test_submit_query_generation_error_does_not_persist() -> None:
         use_case.ejecutar(ComandoRegistrarConsulta(agricultor_id=FARMER_A, texto=QUESTION))
 
     assert rag.consultas == [QUESTION]
+    assert repository.consultas == []
+    assert repository.respuestas == []
+    assert evidence_repo.evidencias == []
+
+
+EXTRACTO_RIEGO = (
+    "El riego debe realizarse considerando el suelo. "
+    "Vigilar la humedad del suelo. Evitar el exceso de agua."
+)
+EXTRACTO_HELADAS = (
+    "Las heladas pueden afectar el cultivo. "
+    "Utilizar métodos de protección. Vigilar la temperatura."
+)
+
+
+class GeneracionControlada(PuertoGeneracionTexto):
+    def __init__(self, texto: str) -> None:
+        self.texto = texto
+        self.pasajes: list[PasajeRecuperado] | None = None
+
+    def generar(
+        self,
+        texto_consulta: str,
+        cultivo: str,
+        region: str,
+        pasajes: list[PasajeRecuperado] | None = None,
+    ) -> RespuestaGenerada:
+        self.pasajes = list(pasajes or [])
+        return RespuestaGenerada(texto_respuesta=self.texto, metodo_generacion="ollama")
+
+
+def _riego() -> FragmentoRecuperado:
+    return FragmentoRecuperado(
+        documento_id="18",
+        titulo_documento="Prueba de riego de papa",
+        fragmento_id="riego:chunk:0000",
+        extracto=EXTRACTO_RIEGO,
+        puntaje_similitud=0.40,
+    )
+
+
+def _heladas() -> FragmentoRecuperado:
+    return FragmentoRecuperado(
+        documento_id="5",
+        titulo_documento="Manejo de heladas en el cultivo de papa",
+        fragmento_id="heladas:chunk:0000",
+        extracto=EXTRACTO_HELADAS,
+        puntaje_similitud=0.41,
+    )
+
+
+def test_submit_query_riego_envia_solo_el_fragmento_utilizado() -> None:
+    generacion = GeneracionControlada("Vigilar la humedad del suelo y evitar el exceso de agua.")
+    use_case, repository, _generation, _rag, evidence_repo = _caso_de_uso(
+        generacion=generacion,
+        rag=RecuperacionRagFalsa([_riego(), _heladas()]),
+    )
+    repository.contextos_seleccionados[FARMER_A] = _contexto(FARMER_A)
+
+    result = use_case.ejecutar(
+        ComandoRegistrarConsulta(
+            agricultor_id=FARMER_A,
+            texto="¿Cómo debo regar el cultivo de papa para no encharcar el suelo?",
+        )
+    )
+
+    assert generacion.pasajes is not None
+    assert [pasaje.extracto for pasaje in generacion.pasajes] == [EXTRACTO_RIEGO]
+    assert result.respuesta == "Vigilar la humedad del suelo y evitar el exceso de agua."
+    assert [item.documento_id for item in result.evidencias] == ["18"]
+    assert [item.titulo_documento for item in evidence_repo.evidencias] == [
+        "Prueba de riego de papa"
+    ]
+    assert [item.documento_id for item in evidence_repo.evidencias] == ["18"]
+
+
+def test_submit_query_heladas_conserva_solo_su_fragmento() -> None:
+    generacion = GeneracionControlada("Utilizar métodos de protección y vigilar la temperatura.")
+    use_case, repository, _generation, _rag, evidence_repo = _caso_de_uso(
+        generacion=generacion,
+        rag=RecuperacionRagFalsa([_heladas(), _riego()]),
+    )
+    repository.contextos_seleccionados[FARMER_A] = _contexto(FARMER_A)
+
+    result = use_case.ejecutar(
+        ComandoRegistrarConsulta(
+            agricultor_id=FARMER_A,
+            texto="¿Qué hago si hay heladas en el cultivo de papa?",
+        )
+    )
+
+    assert generacion.pasajes is not None
+    assert [pasaje.extracto for pasaje in generacion.pasajes] == [EXTRACTO_HELADAS]
+    assert [item.documento_id for item in evidence_repo.evidencias] == ["5"]
+    assert result.respuesta.startswith("Utilizar métodos de protección")
+
+
+def test_submit_query_urea_no_guarda_dosis_ni_fragmentos_ajenos() -> None:
+    generacion = GeneracionControlada(
+        "Se recomienda aplicar entre 150 y 200 kg de urea por hectárea."
+    )
+    use_case, repository, _generation, _rag, evidence_repo = _caso_de_uso(
+        generacion=generacion,
+        rag=RecuperacionRagFalsa([_heladas(), _riego()]),
+    )
+    repository.contextos_seleccionados[FARMER_A] = _contexto(FARMER_A)
+
+    result = use_case.ejecutar(
+        ComandoRegistrarConsulta(
+            agricultor_id=FARMER_A,
+            texto="¿Cuántos kilos de urea por hectárea debo aplicar al cultivo de papa?",
+        )
+    )
+
+    assert generacion.pasajes == []
+    assert result.respuesta == "La base de conocimiento no alcanza para responder."
+    assert result.evidencias == ()
+    assert evidence_repo.evidencias == []
+
+
+def test_submit_query_sin_fragmentos_sustituye_una_dosis_inventada() -> None:
+    generacion = GeneracionControlada("Aplique 150 kg de urea.")
+    use_case, repository, _generation, _rag, evidence_repo = _caso_de_uso(
+        generacion=generacion,
+        rag=RecuperacionRagFalsa([]),
+    )
+    repository.contextos_seleccionados[FARMER_A] = _contexto(FARMER_A)
+
+    result = use_case.ejecutar(
+        ComandoRegistrarConsulta(
+            agricultor_id=FARMER_A,
+            texto="¿Cuántos kilos de urea por hectárea debo aplicar?",
+        )
+    )
+
+    assert generacion.pasajes == []
+    assert result.respuesta == "La base de conocimiento no alcanza para responder."
+    assert "150" not in result.respuesta
+    assert evidence_repo.evidencias == []
+
+
+def test_submit_query_error_de_generacion_no_persiste_aunque_el_fragmento_respalde() -> None:
+    use_case, repository, _generation, rag, evidence_repo = _caso_de_uso(
+        generacion=GeneracionTextoNoDisponible(),
+        rag=RecuperacionRagFalsa([_riego()]),
+    )
+    repository.contextos_seleccionados[FARMER_A] = _contexto(FARMER_A)
+
+    with pytest.raises(ErrorGeneracionTexto, match="no está disponible"):
+        use_case.ejecutar(
+            ComandoRegistrarConsulta(
+                agricultor_id=FARMER_A,
+                texto="¿Cómo debo regar el cultivo de papa?",
+            )
+        )
+
+    assert rag.consultas
     assert repository.consultas == []
     assert repository.respuestas == []
     assert evidence_repo.evidencias == []

@@ -1,7 +1,8 @@
 import axios from "axios";
+import { urlBaseApi } from "./baseUrl.js";
 
 export const api = axios.create({
-  baseURL: import.meta.env.DEV ? "" : "http://127.0.0.1:8000",
+  baseURL: urlBaseApi(import.meta.env),
   timeout: 5000,
 });
 

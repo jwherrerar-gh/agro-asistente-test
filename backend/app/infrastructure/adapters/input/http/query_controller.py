@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from app.application.services.referencia_origen import resolver_referencia_documento
 from app.domain.exceptions import (
     ErrorContextoSeleccionadoNoEncontrado,
     ErrorDominio,
@@ -33,6 +34,7 @@ class QueryEvidenceResponse(BaseModel):
     excerpt: str
     similarity_score: float
     rank_order: int
+    origin_reference: str = ""
 
 
 class QueryClassificationResponse(BaseModel):
@@ -116,6 +118,10 @@ def create_query_router(container: CompositionRoot) -> APIRouter:
                     excerpt=item.extracto,
                     similarity_score=item.puntaje_similitud,
                     rank_order=item.orden_relevancia,
+                    origin_reference=resolver_referencia_documento(
+                        container.puerto_repositorio_documento_conocimiento,
+                        item.documento_id,
+                    ),
                 )
                 for item in result.evidencias
             ],

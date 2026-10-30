@@ -27,3 +27,15 @@ def test_settings_load_defaults_without_secrets_in_code() -> None:
     assert settings.embedding_api_key == ""
     assert "sk-" not in settings.embedding_api_key
     assert "localhost:5173" in settings.cors_origin_list[0]
+    assert "*" not in settings.cors_origin_list
+
+
+def test_cors_rechaza_comodines_y_conserva_el_origen_local() -> None:
+    abierto = Settings(_env_file=None, cors_origins="*")
+    assert abierto.cors_origin_list == ["http://localhost:5173"]
+
+    mixto = Settings(
+        _env_file=None,
+        cors_origins="http://localhost:5173, *, https://*",
+    )
+    assert mixto.cors_origin_list == ["http://localhost:5173"]

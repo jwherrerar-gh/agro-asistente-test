@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listContexts, submitAgriculturalQuery } from "../api/client";
+import {
+  MENSAJE_CARGA,
+  mensajeErrorConsulta,
+  referenciaFuente,
+  textoRespuesta,
+  tituloFuente,
+} from "../consulta/presentacion.js";
 import AuthFooter from "../components/AuthFooter.jsx";
 import AuthenticatedShell from "../components/AuthenticatedShell.jsx";
 
@@ -38,30 +45,16 @@ export default function QueryPage() {
 
     submitAgriculturalQuery({ text })
       .then((response) => {
-        setResult(response.data);
+        const texto = textoRespuesta(response.data);
+        if (!texto) {
+          setError("La respuesta no incluye un texto generado. No se muestra una respuesta inventada.");
+          return;
+        }
+        setResult({ ...response.data, answer: texto });
         setText("");
       })
       .catch((err) => {
-        const status = err.response?.status;
-        const detail = err.response?.data?.detail;
-        if (status === 401) {
-          return;
-        }
-        if (status === 409) {
-          setError(typeof detail === "string" ? detail : "Debes seleccionar un contexto agrícola antes de consultar.");
-        } else if (status === 400 || status === 422) {
-          setError("Revisa el texto de la consulta. No puede estar vacío ni ser demasiado largo.");
-        } else if (status === 503) {
-        setError(
-          typeof detail === "string"
-            ? detail
-            : "El servicio de generación (Ollama) no está disponible. Comprueba que Ollama esté en ejecución."
-        );
-        } else {
-          setError(
-            typeof detail === "string" ? detail : "No se pudo enviar la consulta."
-          );
-        }
+        setError(mensajeErrorConsulta(err));
       })
       .finally(() => setLoading(false));
   }
@@ -115,13 +108,22 @@ export default function QueryPage() {
           </form>
         </section>
 
-        {error && <div className="status status-error"><p>{error}</p></div>}
+        {loading && (
+          <p className="status" role="status">
+            {MENSAJE_CARGA}
+          </p>
+        )}
+        {error && (
+          <div className="status status-error" role="alert">
+            <p>{error}</p>
+          </div>
+        )}
 
-        {result && (
+        {!loading && result && (
           <>
-            <section className="answer-panel">
+            <section className="answer-panel" aria-live="polite">
               <h2>Respuesta</h2>
-              <p className="lead">{result.answer}</p>
+              <p className="answer-text">{result.answer}</p>
               <dl>
                 <dt>Consulta</dt>
                 <dd>{result.text}</dd>
@@ -163,19 +165,29 @@ export default function QueryPage() {
               )}
               {result.evidences && result.evidences.length > 0 && (
                 <ul className="context-list">
-                  {result.evidences.map((item) => (
-                    <li key={`${item.chunk_id}-${item.rank_order}`}>
-                      <div>
-                        <strong>{item.document_title || "Documento agrícola"}</strong>
-                      </div>
-                      <p>{item.excerpt}</p>
-                      <p className="document-meta">
-                        Relevancia: {Number(item.similarity_score).toFixed(3)}
-                        {" · "}
-                        Documento: {item.document_id}
-                      </p>
-                    </li>
-                  ))}
+                  {result.evidences.map((item) => {
+                    const referencia = referenciaFuente(item);
+                    return (
+                      <li key={`${item.chunk_id}-${item.rank_order}`}>
+                        <p className="evidence-title">{tituloFuente(item)}</p>
+                        <p>{item.excerpt}</p>
+                        <p className="document-meta">
+                          Relevancia: {Number(item.similarity_score).toFixed(3)}
+                          {" · "}
+                          Documento: {item.document_id}
+                        </p>
+                        <p className="document-meta">
+                          {referencia.enlace ? (
+                            <a href={referencia.enlace} rel="noopener noreferrer" target="_blank">
+                              {referencia.texto}
+                            </a>
+                          ) : (
+                            referencia.texto
+                          )}
+                        </p>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </section>

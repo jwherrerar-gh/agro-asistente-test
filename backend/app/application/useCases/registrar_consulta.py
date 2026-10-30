@@ -2,6 +2,10 @@ from app.application.services.servicio_recuperacion_rag import (
     FragmentoRecuperado,
     ServicioRecuperacionRag,
 )
+from app.application.services.suficiencia_contexto import (
+    fragmentos_con_respaldo,
+    texto_con_cantidades_controladas,
+)
 from app.domain.entities.consulta import Consulta
 from app.domain.entities.evidencia import Evidencia
 from app.domain.entities.respuesta import Respuesta
@@ -57,21 +61,26 @@ class RegistrarConsulta(PuertoRegistrarConsulta):
         )
         clasificacion, error_clasificacion = self._clasificar_una_vez(consulta.texto.value)
         fragmentos = self._recuperacion_rag.recuperar(consulta.texto.value)
+        utilizados = fragmentos_con_respaldo(consulta.texto.value, fragmentos)
         generada = self._generacion_texto.generar(
             texto_consulta=consulta.texto.value,
             cultivo=contexto.cultivo.value,
             region=contexto.region.value,
-            pasajes=_pasajes_desde_fragmentos(fragmentos),
+            pasajes=_pasajes_desde_fragmentos(utilizados),
+        )
+        texto_controlado = texto_con_cantidades_controladas(
+            generada.texto_respuesta,
+            [fragmento.extracto for fragmento in utilizados],
         )
         self._repositorio_consulta.guardar_consulta(consulta)
         respuesta = Respuesta.crear(
             consulta_id=consulta.id,
-            texto_respuesta=generada.texto_respuesta,
+            texto_respuesta=texto_controlado,
             metodo_generacion=generada.metodo_generacion,
         )
         self._repositorio_consulta.guardar_respuesta(respuesta)
 
-        evidencias = _evidencias_desde_fragmentos(consulta.id, respuesta.id, fragmentos)
+        evidencias = _evidencias_desde_fragmentos(consulta.id, respuesta.id, utilizados)
         if evidencias:
             self._repositorio_evidencia.guardar_todas(evidencias)
 

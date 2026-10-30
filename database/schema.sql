@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS evidencias (
     consulta_id INT NOT NULL,
     respuesta_id INT NULL,
     documento_id INT NOT NULL,
+    titulo_documento VARCHAR(200) NOT NULL DEFAULT '',
     texto_fragmento TEXT NOT NULL,
     puntuacion_similitud DECIMAL(10,6) NULL,
     fecha_creacion TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
@@ -95,3 +96,21 @@ CREATE TABLE IF NOT EXISTS evidencias (
         FOREIGN KEY (respuesta_id) REFERENCES respuestas (id)
         ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Bases ya creadas: agrega el título sin recrear la tabla.
+-- Las evidencias anteriores quedan con título vacío.
+SET @columna_titulo := (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'evidencias'
+      AND COLUMN_NAME = 'titulo_documento'
+);
+SET @sql_titulo := IF(
+    @columna_titulo = 0,
+    'ALTER TABLE evidencias ADD COLUMN titulo_documento VARCHAR(200) NOT NULL DEFAULT '''' AFTER documento_id',
+    'SELECT 1'
+);
+PREPARE stmt_titulo FROM @sql_titulo;
+EXECUTE stmt_titulo;
+DEALLOCATE PREPARE stmt_titulo;

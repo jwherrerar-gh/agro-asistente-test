@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Integer, Numeric, Text, select
+from sqlalchemy import DateTime, Integer, Numeric, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column, sessionmaker
 
 from app.domain.entities.evidencia import Evidencia
@@ -21,6 +21,9 @@ class RegistroEvidencia(Base):
     consulta_id: Mapped[int] = mapped_column(Integer, nullable=False)
     respuesta_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     documento_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    titulo_documento: Mapped[str] = mapped_column(
+        String(200), nullable=False, default="", server_default=""
+    )
     texto_fragmento: Mapped[str] = mapped_column(Text, nullable=False)
     puntuacion_similitud: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
     fecha_creacion: Mapped[object] = mapped_column(DateTime, nullable=True)
@@ -38,6 +41,7 @@ class RepositorioEvidenciaMysql(PuertoRepositorioEvidencia):
                 consulta_id=id_a_entero(item.consulta_id),
                 respuesta_id=id_a_entero(item.respuesta_id) if item.respuesta_id else None,
                 documento_id=id_a_entero(item.documento_id),
+                titulo_documento=(item.titulo_documento or "").strip(),
                 texto_fragmento=_texto_con_fragmento(item.fragmento_id, item.extracto),
                 puntuacion_similitud=Decimal(str(item.puntaje_similitud)),
             )
@@ -71,6 +75,7 @@ class RepositorioEvidenciaMysql(PuertoRepositorioEvidencia):
             extracto=extracto,
             puntaje_similitud=puntaje,
             orden_relevancia=orden_relevancia,
+            titulo_documento=(registro.titulo_documento or "").strip(),
         )
 
 

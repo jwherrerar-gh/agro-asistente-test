@@ -69,7 +69,14 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        origins = [
+            origin.strip()
+            for origin in self.cors_origins.split(",")
+            if origin.strip() and "*" not in origin.strip()
+        ]
+        if not origins:
+            return ["http://localhost:5173"]
+        return origins
 
     @property
     def mysql_url(self) -> str:

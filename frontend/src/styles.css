@@ -490,12 +490,26 @@ dd {
   background: var(--color-navy-soft);
 }
 
+.answer-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+  color: var(--color-navy-dark);
+}
+
 .evidence-panel {
   background: var(--color-white);
 }
 
 .evidence-panel .context-list {
   margin-top: 12px;
+}
+
+.evidence-title {
+  margin: 0 0 6px;
+  font-weight: 700;
+  color: var(--color-navy-dark);
 }
 
 .answer-box {
